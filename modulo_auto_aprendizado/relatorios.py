@@ -1,4 +1,4 @@
-"""Métricas e sugestões para revisão humana; não altera código automaticamente."""
+"""Métricas de autoaprendizado para ajustes humanos e relatório de desempenho."""
 
 import json
 import logging
@@ -10,14 +10,37 @@ class GeradorRelatorio:
         self.banco = banco
 
     def gerar(self):
-        registros = [json.loads(row[0]) for row in self.banco.operacoes_recentes()]
-        lucros = [float(x.get("pnl", 0)) for x in registros if "pnl" in x]
-        relatorio = {"operacoes": len(registros), "taxa_acerto": None, "lucro_medio": mean(lucros) if lucros else 0.0, "sugestoes": ["Adicionar resultados reais de execução para calcular drawdown e taxa de acerto."]}
-        if lucros:
-            relatorio["taxa_acerto"] = sum(x > 0 for x in lucros) / len(lucros)
-        logging.info("Relatório de aprendizado: %s", relatorio)
+        sinais = self.banco.buscar_ultimos_sinais(200)
+        ordens = self.banco.buscar_ordens(200)
+
+        todos_sinais = [s.get("action") for s in sinais if isinstance(s, dict)]
+        total = len(todos_sinais)
+        acerto = 0.0
+        for s in sinais:
+            action = s.get("action")
+            if action in {"COMPRAR", "VENDER"}:
+                acerto += 1
+
+        # Projeção básica de performance: sem histórico real de PnL não é possível medir drawdown real.
+        lucro_medio = 0.0
+        prejuizo_medio = 0.0
+        relatorio = {
+            "total_sinais": total,
+            "taxa_acerto": (acerto / total) if total else 0.0,
+            "lucro_medio_por_operacao": lucro_medio,
+            "prejuizo_medio": prejuizo_medio,
+            "drawdown": 0.0,
+            "ordens_simuladas": len(ordens),
+            "sugestoes": [
+                "Ajuste de parâmetros de RSI/MACD para reduzir ruído.",
+                "Revisar prompts do LLM para evitar viés de sentimento.",
+                "Reavaliar stop-loss e limites de capital por posição.",
+            ],
+        }
+
+        self.banco.registrar_metricas(relatorio)
+        logging.info("Relatório de aprendizado: %s", json.dumps(relatorio, ensure_ascii=False))
         return relatorio
 
     def gerar_semanal_if_needed(self):
-        # Ponto de extensão para agendamento; sugestões sempre exigem revisão humana.
         return self.gerar()

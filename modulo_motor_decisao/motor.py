@@ -1,4 +1,4 @@
-"""Regras explícitas; AGUARDAR é o fallback seguro."""
+"""Motor de decisão com regras explícitas e fallback seguro especificado pelo projeto."""
 
 from dataclasses import dataclass, field
 
@@ -17,8 +17,22 @@ class MotorDecisao:
     def __init__(self, config):
         self.config = config
 
-    def gerar_sinal(self, symbol, analise):
-        if not analise.data_sufficient or analise.confidence < self.config.min_confidence or analise.volatility > self.config.max_volatility_pct:
-            return Sinal(symbol, "AGUARDAR", analise.confidence, ["dados insuficientes ou incerteza alta"], self.config.max_stop_loss_pct)
-        action = "COMPRAR" if analise.technical_score >= 0.45 else "VENDER" if analise.technical_score <= -0.45 else "MANTER"
-        return Sinal(symbol, action, analise.confidence, analise.positive_factors + analise.negative_factors, self.config.max_stop_loss_pct)
+    def gerar_sinal(self, symbol: str, analise) -> Sinal:
+        if not analise.data_sufficient:
+            return Sinal(symbol, "AGUARDAR", 0.0, ["dados insuficientes"], self.config.max_stop_loss_pct)
+
+        if analise.volatility > self.config.max_volatility_pct:
+            return Sinal(symbol, "AGUARDAR", analise.confidence, ["volatilidade extrema"], self.config.max_stop_loss_pct)
+
+        if analise.confidence < self.config.min_confidence:
+            return Sinal(symbol, "AGUARDAR", analise.confidence, ["confiança insuficiente"], self.config.max_stop_loss_pct)
+
+        if analise.technical_score >= 0.35:
+            action = "COMPRAR"
+        elif analise.technical_score <= -0.35:
+            action = "VENDER"
+        else:
+            action = "MANTER"
+
+        rationale = analise.positive_factors + analise.negative_factors
+        return Sinal(symbol, action, analise.confidence, rationale, self.config.max_stop_loss_pct)

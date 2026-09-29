@@ -1,7 +1,6 @@
-"""Ponto de entrada do agente de trading em modo seguro."""
+"""Ponto de entrada principal do agente."""
 
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -18,44 +17,47 @@ from shared.database import BancoDados
 from shared.logging_config import configurar_logging
 
 
-def executar_ciclo(config, coletor, analisador, decisor, risco, executor, banco):
-    """Executa um ciclo completo; falhas por ativo não derrubam o agente inteiro."""
+def executar_ciclo(config, coletor, analisador, decisor, gestor_risco, executor, banco):
+    """Executa um ciclo completo para todos os ativos configurados."""
     for simbolo in config.symbols:
         try:
             mercado = coletor.coletar_mercado(simbolo)
             analise = analisador.analisar(simbolo, mercado)
             sinal = decisor.gerar_sinal(simbolo, analise)
             banco.registrar_sinal(sinal)
-            aprovacao = risco.validar(sinal, mercado, executor.saldo_disponivel())
+            aprovacao = gestor_risco.validar(sinal, mercado, executor.saldo_disponivel())
             banco.registrar_validacao(sinal, aprovacao)
+
             if aprovacao.aprovado:
-                resultado = executor.executar(sinal, aprovacao)
-                banco.registrar_ordem(resultado)
+                ordem = executor.executar(sinal, aprovacao)
+                logging.info("Ordem aprovada: %s -> %s", simbolo, ordem.status)
             else:
-                logging.info("Sinal %s bloqueado: %s", simbolo, aprovacao.motivos)
+                logging.warning("Ordem rejeitada para %s: %s", simbolo, aprovacao.motivos)
         except Exception:
-            # Dados externos podem falhar; registrar e continuar no próximo ativo/ciclo.
-            logging.exception("Falha no ciclo do ativo %s", simbolo)
+            logging.exception("Erro fatal no ciclo do ativo %s", simbolo)
 
 
 def main():
-    """Inicializa componentes e mantém o loop principal com intervalo configurável."""
+    """Inicializa o agente e mantém o loop principal em modo simulação."""
     load_dotenv()
     config = Config.from_env()
     configurar_logging(config.log_level)
-    Path("data").mkdir(exist_ok=True)
+    Path("data").mkdir(parents=True, exist_ok=True)
+
     banco = BancoDados(config.database_path)
     banco.inicializar()
+
     coletor = ColetorDados(config, banco)
     analisador = AnalisadorIA(config, banco)
     decisor = MotorDecisao(config)
-    risco = GestorRisco(config, banco)
+    gestor_risco = GestorRisco(config, banco)
     executor = ExecutorOrdens(config, banco)
 
-    logging.warning("Agente iniciado em modo %s. Mercado financeiro envolve risco de prejuízo.", config.trading_mode)
+    logging.warning("Agente financeido iniciado em modo %s. Mercado financeiro envolve risco de prejuízo.", config.trading_mode)
+
     try:
         while True:
-            executar_ciclo(config, coletor, analisador, decisor, risco, executor, banco)
+            executar_ciclo(config, coletor, analisador, decisor, gestor_risco, executor, banco)
             GeradorRelatorio(banco).gerar_semanal_if_needed()
             time.sleep(config.poll_interval_seconds)
     except KeyboardInterrupt:
