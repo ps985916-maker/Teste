@@ -1,0 +1,12 @@
+# Nunca versionar segredos ou dados locais
+.env
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+logs/
+reports/
+.pytest_cache/
