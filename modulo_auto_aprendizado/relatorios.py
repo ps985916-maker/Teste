@@ -1,46 +1,66 @@
-"""Métricas de autoaprendizado para ajustes humanos e relatório de desempenho."""
+"""Gestor de risco com validação obrigatória antes de qualquer operação."""
 
-import json
-import logging
-from statistics import mean
+from dataclasses import dataclass, field
 
 
-class GeradorRelatorio:
-    def __init__(self, banco):
+@dataclass
+class AprovacaoRisco:
+    aprovado: bool
+    motivos: list[str] = field(default_factory=list)
+    capital_permitido: float = 0.0
+
+
+class GestorRisco:
+    def __init__(self, config, banco):
+        self.config = config
         self.banco = banco
+        self.daily_loss = 0.0
+        self.weekly_loss = 0.0
+        self.halted = False
 
-    def gerar(self):
-        sinais = self.banco.buscar_ultimos_sinais(200)
-        ordens = self.banco.buscar_ordens(200)
+    def validar(self, sinal, mercado: dict, saldo: float) -> AprovacaoRisco:
+        motivos = []
 
-        todos_sinais = [s.get("action") for s in sinais if isinstance(s, dict)]
-        total = len(todos_sinais)
-        acerto = 0.0
-        for s in sinais:
-            action = s.get("action")
-            if action in {"COMPRAR", "VENDER"}:
-                acerto += 1
+        if self.halted:
+            motivos.append("operações interrompidas por limite de perda")
 
-        # Projeção básica de performance: sem histórico real de PnL não é possível medir drawdown real.
-        lucro_medio = 0.0
-        prejuizo_medio = 0.0
-        relatorio = {
-            "total_sinais": total,
-            "taxa_acerto": (acerto / total) if total else 0.0,
-            "lucro_medio_por_operacao": lucro_medio,
-            "prejuizo_medio": prejuizo_medio,
-            "drawdown": 0.0,
-            "ordens_simuladas": len(ordens),
-            "sugestoes": [
-                "Ajuste de parâmetros de RSI/MACD para reduzir ruído.",
-                "Revisar prompts do LLM para evitar viés de sentimento.",
-                "Reavaliar stop-loss e limites de capital por posição.",
-            ],
-        }
+        if sinal.action in {"AGUARDAR", "MANTER"}:
+            motivos.append("sinal não operável")
 
-        self.banco.registrar_metricas(relatorio)
-        logging.info("Relatório de aprendizado: %s", json.dumps(relatorio, ensure_ascii=False))
-        return relatorio
+        if sinal.action not in {"COMPRAR", "VENDER"}:
+            motivos.append("ação inválida")
 
-    def gerar_semanal_if_needed(self):
-        return self.gerar()
+        if sinal.stop_loss_pct <= 0 or sinal.stop_loss_pct > self.config.max_stop_loss_pct:
+            motivos.append("stop-loss fora do limite aceitável")
+
+        if self.daily_loss >= self.config.max_daily_loss:
+            self.halted = True
+            motivos.append("limite diário de perda excedido")
+
+        if self.weekly_loss >= self.config.max_weekly_loss:
+            self.halted = True
+            motivos.append("limite semanal de perda excedido")
+
+        if mercado.get("ticker", {}).get("last") is None:
+            motivos.append("preço de mercado indisponível")
+
+        if mercado.get("candles") is None or len(mercado.get("candles", [])) < 20:
+            motivos.append("quantidade insuficiente de candles")
+
+        volatility = mercado.get("volatility", 0.0)
+        if volatility and volatility > self.config.max_volatility_pct:
+            motivos.append("volatilidade extrema detectada")
+
+        capital_permitido = float(saldo) * self.config.max_capital_per_trade
+        if capital_permitido <= 0:
+            motivos.append("capital permitido inválido")
+
+        aprovado = not motivos
+        return AprovacaoRisco(aprovado=aprovado, motivos=motivos, capital_permitido=capital_permitido)
+
+    def registrar_perda(self, valor_percentual: float):
+        """Atualiza os limites diários/semanais de perda e ativa stop automático."""
+        self.daily_loss += max(0.0, valor_percentual)
+        self.weekly_loss += max(0.0, valor_percentual)
+        if self.daily_loss >= self.config.max_daily_loss or self.weekly_loss >= self.config.max_weekly_loss:
+            self.halted = True

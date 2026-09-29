@@ -1,22 +1,25 @@
-# Agente de Trading Automatizado com IA
+# Variáveis sensíveis do agente financeiro (nunca versionar segredos)
+LLM_API_KEY=
+NEWS_API_KEY=
+ALPHA_VANTAGE_API_KEY=
+EXCHANGE_API_KEY=
+EXCHANGE_SECRET=
 
-Projeto modular e seguro para análise de mercado e paper trading. **O modo SIMULACAO é obrigatório por padrão; não há garantia de lucro e todo mercado envolve risco de prejuízo.**
+TRADING_MODE=SIMULACAO
+EXCHANGE_ID=binance
+SYMBOLS=BTC/USDT,ETH/USDT
+TIMEFRAME=1h
+POLL_INTERVAL_SECONDS=300
+DATABASE_PATH=data/trading_agent.sqlite3
+LOG_LEVEL=INFO
 
-## Início rápido
+MAX_CAPITAL_PER_TRADE=0.02
+MAX_DAILY_LOSS=0.03
+MAX_WEEKLY_LOSS=0.07
+MAX_STOP_LOSS_PCT=0.03
+MAX_VOLATILITY_PCT=0.10
+MIN_CONFIDENCE=0.65
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
-cp .env.example .env
-python main.py
-```
-
-O sistema coleta dados, calcula indicadores, registra análises, aplica regras de decisão e valida tudo pelo módulo de risco antes de qualquer execução. O LLM é apenas um fornecedor de insumos e não envia ordens.
-
-## Segurança
-
-- Nunca coloque chaves reais no Git; use `.env` local.
-- O modo `REAL` permanece bloqueado por padrão e exige implementação/revisão adicional.
-- O módulo de risco é obrigatório para qualquer ordem.
-- Este software é educacional e não constitui recomendação financeira.
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+NEWS_BASE_URL=https://newsapi.org/v2/everything
